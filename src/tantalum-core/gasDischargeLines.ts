@@ -1,4 +1,4 @@
-export const GasDischargeLines = [
+export const gasDischargeLines = [
     {
         "name": "Aluminum",
         "wavelengths": [

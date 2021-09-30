@@ -1,6 +1,7 @@
-import * as tcore from "./tantalum-core";
+import * as SpectrumRenderer from "./tantalum-core/SpectrumRenderer";
 import * as tui from "./tantalum-ui/index";
-import { GasDischargeLines } from "./gasspectra";
+import * as tcore from "./tantalum-core/index";
+import { gasDischargeLines } from "./tantalum-core/gasDischargeLines";
 import { colorBufferFloatTest } from "./colorBufferFloatTest";
 
 export class Tantalum {
@@ -108,7 +109,9 @@ export class Tantalum {
             this.canvas.width,
             this.canvas.height,
             config.scenes.map(s => s.shader));
-        const spectrumRenderer = new tcore.SpectrumRenderer(this.spectrumCanvas, renderer.getEmissionSpectrum());
+        const spectrumRenderer = new SpectrumRenderer.SpectrumRenderer(
+            this.spectrumCanvas,
+            renderer.emissionSpectrum);
 
         /* Let's try and make member variables in JS a little less verbose... */
         const { content, canvas } = this;
@@ -155,8 +158,8 @@ export class Tantalum {
 
         const temperatureSlider = new tui.Slider(1000, 10000, true, function (this: tui.Slider, temperature: number) {
             this.setLabel("Temperature: " + temperature + "K");
-            renderer.setEmitterTemperature(temperature);
-            spectrumRenderer.setSpectrum(renderer.getEmissionSpectrum());
+            renderer.setEmissionSpectrum({ emitterTemperature: temperature });
+            spectrumRenderer.draw();
         });
         tui.replace("emission-temperature", temperatureSlider.el);
 
@@ -177,10 +180,10 @@ export class Tantalum {
 
         const gasGrid = new tui.ButtonGrid(
             4,
-            GasDischargeLines.map(l => l.name),
+            gasDischargeLines.map(l => l.name),
             function (gasId) {
-                renderer.setEmitterGas(gasId);
-                spectrumRenderer.setSpectrum(renderer.getEmissionSpectrum());
+                renderer.setEmissionSpectrum({ emitterGas: gasId });
+                spectrumRenderer.draw();
             });
         tui.replace("gas-selection", gasGrid.el);
 
@@ -189,13 +192,16 @@ export class Tantalum {
 
         tui.replace(
             "emission-selector",
-            new tui.ButtonGroup(false, ["White", "Incandescent", "Gas Discharge"], function (type) {
-                renderer.setEmissionSpectrumType(type);
-                spectrumRenderer.setSmooth(type != tcore.Renderer.SPECTRUM_GAS_DISCHARGE);
-                spectrumRenderer.setSpectrum(renderer.getEmissionSpectrum());
-                temperatureSlider.show(type == tcore.Renderer.SPECTRUM_INCANDESCENT);
-                gasGrid.show(type == tcore.Renderer.SPECTRUM_GAS_DISCHARGE);
-            }).el);
+            new tui.ButtonGroup(
+                false,
+                ["White", "Incandescent", "Gas Discharge"],
+                function (type) {
+                    renderer.setEmissionSpectrum({ emissionType: type })
+                    spectrumRenderer.setSmooth(type != tcore.EmissionSpectrum.SPECTRUM_GAS_DISCHARGE);
+                    spectrumRenderer.draw();
+                    temperatureSlider.show(type == tcore.EmissionSpectrum.SPECTRUM_INCANDESCENT);
+                    gasGrid.show(type == tcore.EmissionSpectrum.SPECTRUM_GAS_DISCHARGE);
+                }).el);
 
         document.getElementById('save-button')!
             .addEventListener('click', () => this.saveImageData = true);

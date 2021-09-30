@@ -1,10 +1,7 @@
-import * as tgl from "./tantalum-gl";
-import { wavelengthToRgbTable } from "./spectrum";
-import { GasDischargeLines } from "./gasspectra";
-import * as Shaders from "./tantalum-shaders";
-
-const LAMBDA_MIN = 360.0;
-const LAMBDA_MAX = 750.0;
+import * as tgl from "../tantalum-gl";
+import * as Shaders from "../tantalum-shaders";
+import { wavelengthToRgbTable } from "./wavelengthToRgbTable";
+import { EmissionSpectrum } from "./EmissionSpectrum";
 
 class RayState {
     posTex: tgl.Texture;
@@ -57,12 +54,6 @@ class RayState {
 }
 
 export class Renderer {
-    static SPECTRUM_WHITE = 0;
-    static SPECTRUM_INCANDESCENT = 1;
-    static SPECTRUM_GAS_DISCHARGE = 2;
-
-    static SPECTRUM_SAMPLES = 256;
-    static ICDF_SAMPLES = 1024;
 
     static SPREAD_POINT = 0;
     static SPREAD_CONE = 1;
@@ -74,9 +65,6 @@ export class Renderer {
 
     maxSampleCount = 100000;
     spreadType = Renderer.SPREAD_POINT;
-    emissionSpectrumType = Renderer.SPECTRUM_WHITE;
-    emitterTemperature = 5000.0;
-    emitterGas = 0;
     currentScene = 0;
     needsReset = true;
 
@@ -88,7 +76,6 @@ export class Renderer {
 
     maxPathLength = 12;
 
-    spectrumTable: ReturnType<typeof wavelengthToRgbTable>;
     spectrum: tgl.Texture;
     emission: tgl.Texture;
     emissionIcdf: tgl.Texture;
@@ -111,6 +98,8 @@ export class Renderer {
     screenBuffer?: tgl.Texture;
     waveBuffer?: tgl.Texture;
 
+    emissionSpectrum = new EmissionSpectrum();
+
     constructor(
         public gl: WebGL2RenderingContext,
         public multiBufExt: WEBGL_draw_buffers,
@@ -126,11 +115,14 @@ export class Renderer {
         this.rayProgram = new tgl.Shader(gl, Shaders, "ray_vert", "ray_frag");
         this.tracePrograms = scenes.map(s => new tgl.Shader(gl, Shaders, "trace_vert", s));
 
-        this.spectrumTable = wavelengthToRgbTable();
-        this.spectrum = new tgl.Texture(gl, this.spectrumTable.length / 4, 1, 4, true, true, true, this.spectrumTable);
-        this.emission = new tgl.Texture(gl, Renderer.SPECTRUM_SAMPLES, 1, 1, true, false, true, null);
-        this.emissionIcdf = new tgl.Texture(gl, Renderer.ICDF_SAMPLES, 1, 1, true, false, true, null);
-        this.emissionPdf = new tgl.Texture(gl, Renderer.SPECTRUM_SAMPLES, 1, 1, true, false, true, null);
+        this.spectrum = new tgl.Texture(gl,
+            wavelengthToRgbTable.length / 4, 1, 4, true, true, true, wavelengthToRgbTable);
+        this.emission = new tgl.Texture(gl,
+            EmissionSpectrum.SPECTRUM_SAMPLES, 1, 1, true, false, true, null);
+        this.emissionIcdf = new tgl.Texture(gl,
+            EmissionSpectrum.ICDF_SAMPLES, 1, 1, true, false, true, null);
+        this.emissionPdf = new tgl.Texture(gl,
+            EmissionSpectrum.SPECTRUM_SAMPLES, 1, 1, true, false, true, null);
 
         this.resetActiveBlock();
         this.currentState = 0;
@@ -158,142 +150,23 @@ export class Renderer {
 
         this.changeResolution(width, height);
         this.setEmitterPos([width / 2, height / 2], [width / 2, height / 2]);
-        this.computeEmissionSpectrum();
+        this.emissionSpectrum.set({});
     }
     resetActiveBlock() {
         this.activeBlock = 4;
     }
-    setEmissionSpectrumType(type: number) {
-        this.emissionSpectrumType = type;
-        this.computeEmissionSpectrum();
-    }
-    setEmitterTemperature(temperature: number) {
-        this.emitterTemperature = temperature;
-        if (this.emissionSpectrumType == Renderer.SPECTRUM_INCANDESCENT)
-            this.computeEmissionSpectrum();
-    }
-    setEmitterGas(gasId: number) {
-        this.emitterGas = gasId;
-        if (this.emissionSpectrumType == Renderer.SPECTRUM_GAS_DISCHARGE)
-            this.computeEmissionSpectrum();
-    }
+    setEmissionSpectrum(values: Parameters<EmissionSpectrum["set"]>[0]) {
+        this.emissionSpectrum.set(values);
 
-    emissionSpectrum?: Float32Array;
-    computeEmissionSpectrum() {
-        if (!this.emissionSpectrum) {
-            this.emissionSpectrum = new Float32Array(Renderer.SPECTRUM_SAMPLES);
-        }
-
-        switch (this.emissionSpectrumType) {
-            case Renderer.SPECTRUM_WHITE:
-                for (var i = 0; i < Renderer.SPECTRUM_SAMPLES; ++i)
-                    this.emissionSpectrum[i] = 1.0;
-                break;
-            case Renderer.SPECTRUM_INCANDESCENT:
-                var h = 6.626070040e-34;
-                var c = 299792458.0;
-                var kB = 1.3806488e-23;
-                var T = this.emitterTemperature;
-
-                for (var i = 0; i < Renderer.SPECTRUM_SAMPLES; ++i) {
-                    var l = (LAMBDA_MIN + (LAMBDA_MAX - LAMBDA_MIN) * (i + 0.5) / Renderer.SPECTRUM_SAMPLES) * 1e-9;
-                    var power = 1e-12 * (2.0 * h * c * c) / (l * l * l * l * l * (Math.exp(h * c / (l * kB * T)) - 1.0));
-
-                    this.emissionSpectrum[i] = power;
-                }
-                break;
-            case Renderer.SPECTRUM_GAS_DISCHARGE:
-                var wavelengths = GasDischargeLines[this.emitterGas].wavelengths;
-                var strengths = GasDischargeLines[this.emitterGas].strengths;
-
-                for (var i = 0; i < Renderer.SPECTRUM_SAMPLES; ++i)
-                    this.emissionSpectrum[i] = 0.0;
-
-                for (var i = 0; i < wavelengths.length; ++i) {
-                    var idx = Math.floor((wavelengths[i] - LAMBDA_MIN) / (LAMBDA_MAX - LAMBDA_MIN) * Renderer.SPECTRUM_SAMPLES);
-                    if (idx < 0 || idx >= Renderer.SPECTRUM_SAMPLES)
-                        continue;
-
-                    this.emissionSpectrum[idx] += strengths[i];
-                }
-        }
-
-        this.computeSpectrumIcdf();
-
+        this.emissionIcdf.bind(0);
+        this.emissionIcdf.copy(this.emissionSpectrum.icdf);
+        this.emissionPdf.bind(0);
+        this.emissionPdf.copy(this.emissionSpectrum.pdf);
         this.emission.bind(0);
-        this.emission.copy(this.emissionSpectrum);
+        this.emission.copy(this.emissionSpectrum.samples);
         this.reset();
     }
 
-    cdf?: Float32Array;
-    pdf?: Float32Array;
-    icdf?: Float32Array;
-    computeSpectrumIcdf() {
-        if (!this.cdf) {
-            this.cdf = new Float32Array(Renderer.SPECTRUM_SAMPLES + 1);
-            this.pdf = new Float32Array(Renderer.SPECTRUM_SAMPLES);
-            this.icdf = new Float32Array(Renderer.ICDF_SAMPLES);
-        }
-
-        const pdf = this.pdf!;
-        const icdf = this.icdf!;
-        const emissionSpectrum = this.emissionSpectrum!;
-
-        let sum = 0.0;
-        for (var i = 0; i < Renderer.SPECTRUM_SAMPLES; ++i)
-            sum += emissionSpectrum[i];
-
-        /* Mix in 10% of a uniform sample distribution to stay on the safe side.
-           Especially gas emission spectra with lots of emission lines
-           tend to have small peaks that fall through the cracks otherwise */
-        var safetyPadding = 0.1;
-        var normalization = Renderer.SPECTRUM_SAMPLES / sum;
-
-        /* Precompute cdf and pdf (unnormalized for now) */
-        this.cdf[0] = 0.0;
-        for (var i = 0; i < Renderer.SPECTRUM_SAMPLES; ++i) {
-            emissionSpectrum[i] *= normalization;
-
-            /* Also take into account the observer response when distributing samples.
-               Otherwise tends to prioritize peaks just barely outside the visible spectrum */
-            var observerResponse = (1.0 / 3.0) * (
-                Math.abs(this.spectrumTable[i * 4]) +
-                Math.abs(this.spectrumTable[i * 4 + 1]) +
-                Math.abs(this.spectrumTable[i * 4 + 2]));
-
-            pdf[i] = observerResponse * (emissionSpectrum[i] + safetyPadding) / (1.0 + safetyPadding);
-            this.cdf[i + 1] = pdf[i] + this.cdf[i];
-        }
-
-        /* All done! Time to normalize */
-        var cdfSum = this.cdf[Renderer.SPECTRUM_SAMPLES];
-        for (var i = 0; i < Renderer.SPECTRUM_SAMPLES; ++i) {
-            pdf[i] *= Renderer.SPECTRUM_SAMPLES / cdfSum;
-            this.cdf[i + 1] /= cdfSum;
-        }
-        /* Make sure we don't fall into any floating point pits */
-        this.cdf[Renderer.SPECTRUM_SAMPLES] = 1.0;
-
-        /* Precompute an inverted mapping of the cdf. This is biased!
-           Unfortunately we can't really afford to do runtime bisection
-           on the GPU, so this will have to do. For our purposes a small
-           amount of bias is tolerable anyway. */
-        var cdfIdx = 0;
-        for (var i = 0; i < Renderer.ICDF_SAMPLES; ++i) {
-            var target = Math.min((i + 1) / Renderer.ICDF_SAMPLES, 1.0);
-            while (this.cdf[cdfIdx] < target)
-                cdfIdx++;
-            icdf[i] = (cdfIdx - 1.0) / Renderer.SPECTRUM_SAMPLES;
-        }
-
-        this.emissionIcdf.bind(0);
-        this.emissionIcdf.copy(icdf);
-        this.emissionPdf.bind(0);
-        this.emissionPdf.copy(pdf);
-    }
-    getEmissionSpectrum() {
-        return this.emissionSpectrum!;
-    }
     setMaxPathLength(length: number) {
         this.maxPathLength = length;
         this.reset();
@@ -549,138 +422,4 @@ export class Renderer {
 
 
 
-export class SpectrumRenderer {
-    smooth = true;
-    context: CanvasRenderingContext2D;
-    spectrumFill: HTMLImageElement;
-    pattern?: CanvasPattern | null;
-    constructor(
-        public canvas: HTMLCanvasElement,
-        public spectrum: Float32Array,
-    ) {
-        this.context = this.canvas.getContext('2d')!;
 
-        this.spectrumFill = new Image();
-        this.spectrumFill.src = 'Spectrum.png';
-        this.spectrumFill.addEventListener('load', this.loadPattern.bind(this));
-        if (this.spectrumFill.complete)
-            this.loadPattern();
-    }
-    setSpectrum(spectrum: Float32Array) {
-        this.spectrum = spectrum;
-        this.draw();
-    }
-    loadPattern() {
-        this.pattern = this.context.createPattern(this.spectrumFill, 'repeat-y');
-        this.draw();
-    }
-    setColor(r: number, g: number, b: number) {
-        this.context.strokeStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
-    }
-    drawLine(p: number[]) {
-        this.context.moveTo(p[0], p[1]);
-        for (var i = 2; i < p.length; i += 2)
-            this.context.lineTo(p[i], p[i + 1]);
-    }
-    setSmooth(smooth: boolean) {
-        this.smooth = smooth;
-    }
-    draw() {
-        var ctx = this.context;
-
-        var w = this.canvas.width;
-        var h = this.canvas.height;
-        var marginX = 10;
-        var marginY = 20;
-
-        ctx.clearRect(0, 0, w, h);
-
-        var graphW = w - 2 * marginX;
-        var graphH = h - 2 * marginY;
-        var graphX = 0 * 0.5 + marginX;
-        var graphY = 0 * 0.5 + h - marginY;
-
-        var axisX0 = 360;
-        var axisX1 = 750;
-        var axisY0 = 0.0;
-        var axisY1 = 1.0;
-        var xTicks = 50.0;
-        var yTicks = 0.2;
-        var tickSize = 10;
-
-        var mapX = function (x: number) { return graphX + Math.floor(graphW * (x - axisX0) / (axisX1 - axisX0)); };
-        var mapY = function (y: number) { return graphY - Math.floor(graphH * (y - axisY0) / (axisY1 - axisY0)); };
-
-        ctx.beginPath();
-        this.setColor(128, 128, 128);
-        ctx.lineWidth = 1;
-        ctx.setLineDash([1, 2]);
-        for (var gx = axisX0 - 10 + xTicks; gx <= axisX1; gx += xTicks)
-            this.drawLine([mapX(gx), graphY, mapX(gx), graphY - graphH]);
-        for (var gy = axisY0 + yTicks; gy <= axisY1; gy += yTicks)
-            this.drawLine([graphX, mapY(gy), graphX + graphW, mapY(gy)]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        var max = 0.0;
-        for (var i = 0; i < this.spectrum.length; ++i)
-            max = Math.max(this.spectrum[i], max);
-        max *= 1.1;
-
-        var grapher = this;
-        var drawGraph = function () {
-            var spectrum = grapher.spectrum;
-            var path = new Path2D();
-            path.moveTo(0, h);
-            for (var gx = axisX0; gx <= axisX1; gx += grapher.smooth ? 15 : 1) {
-                var x = mapX(gx);
-                var sx = spectrum.length * (gx - LAMBDA_MIN) / (LAMBDA_MAX - LAMBDA_MIN);
-                var y = mapY(spectrum[Math.max(Math.min(Math.floor(sx), spectrum.length - 1), 0)] / max);
-                if (gx == axisX0)
-                    path.moveTo(x, y);
-
-                else
-                    path.lineTo(x, y);
-            }
-            return path;
-        };
-
-        var filled = drawGraph();
-        filled.lineTo(graphX + graphW, graphY);
-        filled.lineTo(graphX, graphY);
-        ctx.fillStyle = this.pattern!;
-        ctx.fill(filled);
-        ctx.fillStyle = "black";
-
-        var outline = drawGraph();
-        this.setColor(0, 0, 0);
-        ctx.lineWidth = 2;
-        ctx.stroke(outline);
-
-        ctx.beginPath();
-        this.setColor(128, 128, 128);
-        ctx.lineWidth = 2;
-        this.drawLine([
-            graphX + graphW, graphY - tickSize,
-            graphX + graphW, graphY,
-            graphX, graphY,
-            graphX, graphY - graphH,
-            graphX + tickSize, graphY - graphH
-        ]);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.lineWidth = 2;
-        for (var gx = axisX0 - 10 + xTicks; gx < axisX1; gx += xTicks)
-            this.drawLine([mapX(gx), graphY, mapX(gx), graphY - tickSize]);
-        for (var gy = axisY0 + yTicks; gy < axisY1; gy += yTicks)
-            this.drawLine([graphX, mapY(gy), graphX + tickSize, mapY(gy)]);
-        ctx.stroke();
-
-        ctx.font = "15px serif";
-        ctx.textAlign = "center";
-        for (var gx = axisX0 - 10 + xTicks; gx < axisX1; gx += xTicks)
-            ctx.fillText(gx.toString(), mapX(gx), graphY + 15);
-        ctx.fillText("λ", graphX + graphW, graphY + 16);
-    }
-}
