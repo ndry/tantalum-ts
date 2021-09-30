@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "strict": true,
+        "lib": [
+            "ESNext",
+            "DOM"
+        ],
+        "target": "ES6"
+    },
+    "files": [
+        "./src/ambient.d.ts",
+        "./src/index.ts"
+    ]
+}

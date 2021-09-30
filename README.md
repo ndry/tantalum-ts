@@ -1,5 +1,11 @@
 ![Tantalum Sample Render](https://raw.githubusercontent.com/tunabrain/tantalum/master/Header.jpg "Tantalum Sample Render")
 
+# Fork note
+
+This fork is a typescript translation of the original javascript implementation, which I made to closely inspect the code structure. Its crossbrowser support may have shrunk in old browsers.
+
+The original README content follows below, except the Compilation section, which was updated.
+
 # The Tantalum Renderer #
 
 ## About ##
@@ -16,4 +22,6 @@ Note that Tantalum includes several third-party libraries in the `src/thirdparty
 
 ## Compilation ##
 
-The only thing that needs to be compiled are the shaders, contained in the `shaders` subfolder. The `compile_shaders.py` script will turn those text files into a list of strings in a JS file (needs Python 3).
+`npm i`
+
+`npm run build`
