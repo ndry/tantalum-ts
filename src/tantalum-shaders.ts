@@ -1,6 +1,3 @@
-export { default as blend_test_frag } from "./shaders/blend_test_frag.txt";
-export { default as blend_test_pack_frag } from "./shaders/blend_test_pack_frag.txt";
-export { default as blend_test_vert } from "./shaders/blend_test_vert.txt";
 export { default as bsdf } from "./shaders/bsdf.txt";
 export { default as compose_frag } from "./shaders/compose_frag.txt";
 export { default as compose_vert } from "./shaders/compose_vert.txt";

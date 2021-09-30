@@ -1,5 +1,4 @@
-import { Shader, Texture, RenderTarget, VertexBuffer } from "./tantalum-gl";
-import * as Shaders from "./tantalum-shaders";
+import * as twgl from "twgl.js";
 
 export function colorBufferFloatTest(
     gl: WebGL2RenderingContext,
@@ -14,40 +13,76 @@ export function colorBufferFloatTest(
        or not, we have to do a very hacky up-front blending test
        and see whether the results come out correct.
        Hurray WebGL! */
-    const shader = new Shader(gl, Shaders, "blend_test_vert", "blend_test_frag");
-    const packShader = new Shader(gl, Shaders, "blend_test_vert", "blend_test_pack_frag");
-    const target = new Texture(gl, 1, 1, 4, true, false, false, new Float32Array([-6.0, 10.0, 30.0, 2.0]));
-    const fbo = new RenderTarget(gl, multiBufExt);
-    const vbo = new VertexBuffer(gl);
-    vbo.bind();
-    vbo.addAttribute("Position", 3, gl.FLOAT, false);
-    vbo.init(4);
-    vbo.copy(new Float32Array([1.0, 1.0, 0.0, -1.0, 1.0, 0.0, -1.0, -1.0, 0.0, 1.0, -1.0, 0.0]));
+
+    const blend_test_vert = `precision highp float; 
+    attribute vec3 Position; 
+    void main() { gl_Position = vec4(Position, 1.0); }`;
+    const blend_test_frag = `precision highp float; 
+    void main() { gl_FragColor = vec4(vec3(7.0, 59.0, -7.0), 1.0); }`;
+    const blend_test_pack_frag = `precision highp float; 
+    uniform sampler2D Tex; 
+    void main() { gl_FragColor = texture2D(Tex, vec2(0.5))*(1.0/255.0); }`;
+
+    const shader = twgl.createProgramInfo(gl, [blend_test_vert, blend_test_frag], er => { throw new Error(er); });
+    const packShader = twgl.createProgramInfo(gl, [blend_test_vert, blend_test_pack_frag], er => { throw new Error(er); });
+    const target = twgl.createTexture(gl, {
+        width: 1,
+        height: 1,
+        format: gl.RGBA,
+        type: gl.FLOAT,
+        minMag: gl.NEAREST,
+        wrap: gl.REPEAT,
+        src: [-6.0, 10.0, 30.0, 2.0],
+    });
+
+    const fbo = gl.createFramebuffer();
+    const vbo = twgl.createBufferInfoFromArrays(gl, {
+        Position: [
+            1.0, 1.0, 0.0,
+            -1.0, 1.0, 0.0,
+            -1.0, -1.0, 0.0,
+            1.0, -1.0, 0.0
+        ],
+    });
 
     gl.viewport(0, 0, 1, 1);
 
-    fbo.bind();
-    fbo.drawBuffers(1);
-    fbo.attachTexture(target, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    multiBufExt.drawBuffersWEBGL([gl.COLOR_ATTACHMENT0]);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
 
-    shader.bind();
-    vbo.draw(shader, gl.TRIANGLE_FAN);
-    vbo.draw(shader, gl.TRIANGLE_FAN);
+    gl.useProgram(shader.program);
+    twgl.drawObjectList(gl, [{
+        programInfo: shader,
+        bufferInfo: vbo,
+        uniforms: {},
+        type: gl.TRIANGLE_FAN,
+    }]);
+    twgl.drawObjectList(gl, [{
+        programInfo: shader,
+        bufferInfo: vbo,
+        uniforms: {},
+        type: gl.TRIANGLE_FAN,
+    }]);
 
-    fbo.unbind();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.disable(gl.BLEND);
 
     /* Of course we can neither read back texture contents or read floating point
        FBO attachments in WebGL, so we have to do another pass, convert to uint8
        and check whether the results are ok.
        Hurray WebGL! */
-    packShader.bind();
-    target.bind(0);
-    packShader.uniformTexture("Tex", target);
-    vbo.draw(packShader, gl.TRIANGLE_FAN);
+    twgl.drawObjectList(gl, [{
+        programInfo: packShader,
+        bufferInfo: vbo,
+        uniforms: {
+            Tex: target
+        },
+        type: gl.TRIANGLE_FAN,
+    }]);
 
     const pixels = new Uint8Array([0, 0, 0, 0]);
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);

@@ -22,5 +22,9 @@ it freely, subject to the following restrictions:
 
 This software contains source code and data from third-party sources. They are listed below:
 
-src.thirdparty/canvasToBlob is CanvasToBlob.js, written by Eli Grey and Devin Samarin. Its license can be found in thirdparty/canvasToBlob/LICENSE.md
-src/thirdparty/FileSaver is FileSaver.js, written by Eli Grey. Its license can be found in thirdparty/FileSaver/LICENSE.md
+* `./thirdparty/canvasToBlob` is CanvasToBlob.js, written by Eli Grey and Devin Samarin. Its license can be found in `./thirdparty/canvasToBlob/LICENSE.md`
+* `./thirdparty/FileSaver` is FileSaver.js, written by Eli Grey. Its license can be found in `./thirdparty/FileSaver/LICENSE.md`
+
+This software bundles source code from npm modules. 
+Those modules are listed in `./package.json#dependecies`. 
+Their licenses can be found in `./LICENSES-npm.md`
