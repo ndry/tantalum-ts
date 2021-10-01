@@ -1,0 +1,22 @@
+#extension GL_EXT_draw_buffers : require
+#include "preamble"
+
+#include "rand"
+
+uniform sampler2D RngData;
+uniform vec2 EmitterPos;
+
+varying vec2 vTexCoord;
+
+void main() {
+    vec4 state = texture2D(RngData, vTexCoord);
+
+    float theta = (rand(state) - 0.5)*2.0*PI;
+    vec2 dir = vec2(cos(theta), sin(theta));
+    
+    vec3 rgb = 0.1 * vec3(1.0);
+
+    gl_FragData[0] = vec4(EmitterPos, dir);
+    gl_FragData[1] = state;
+    gl_FragData[2] = vec4(rgb, 555.0);
+}

@@ -22,15 +22,15 @@ export class EmissionSpectrum {
     pdf = new Float32Array(EmissionSpectrum.SPECTRUM_SAMPLES);
     icdf = new Float32Array(EmissionSpectrum.ICDF_SAMPLES);
 
-    spectrum: WebGLTexture;
-    emission: WebGLTexture;
-    emissionIcdf: WebGLTexture;
-    emissionPdf: WebGLTexture;
+    spectrumTex: WebGLTexture;
+    emissionTex: WebGLTexture;
+    emissionIcdfTex: WebGLTexture;
+    emissionPdfTex: WebGLTexture;
 
     constructor(
         public gl: WebGL2RenderingContext,
     ) {
-        this.spectrum = twgl.createTexture(gl, {
+        this.spectrumTex = twgl.createTexture(gl, {
             width: wavelengthToRgbTable.length / 4,
             height: 1,
             format: gl.RGBA, // 4-channel
@@ -39,7 +39,7 @@ export class EmissionSpectrum {
             wrap: gl.CLAMP_TO_EDGE,
             src: wavelengthToRgbTable,
         });
-        this.emission = twgl.createTexture(gl, {
+        this.emissionTex = twgl.createTexture(gl, {
             width: EmissionSpectrum.SPECTRUM_SAMPLES,
             height: 1,
             format: gl.LUMINANCE, // 1-channel
@@ -47,7 +47,7 @@ export class EmissionSpectrum {
             minMag: gl.NEAREST,
             wrap: gl.CLAMP_TO_EDGE,
         });
-        this.emissionIcdf = twgl.createTexture(gl, {
+        this.emissionIcdfTex = twgl.createTexture(gl, {
             width: EmissionSpectrum.ICDF_SAMPLES,
             height: 1,
             format: gl.LUMINANCE, // 1-channel
@@ -55,7 +55,7 @@ export class EmissionSpectrum {
             minMag: gl.NEAREST,
             wrap: gl.CLAMP_TO_EDGE,
         });
-        this.emissionPdf = twgl.createTexture(gl, {
+        this.emissionPdfTex = twgl.createTexture(gl, {
             width: EmissionSpectrum.SPECTRUM_SAMPLES,
             height: 1,
             format: gl.LUMINANCE, // 1-channel
@@ -63,6 +63,7 @@ export class EmissionSpectrum {
             minMag: gl.NEAREST,
             wrap: gl.CLAMP_TO_EDGE,
         });
+        this.compute();
     }
 
     set(values: {
@@ -89,7 +90,7 @@ export class EmissionSpectrum {
         this.computeIcdf();
 
         const gl = this.gl;
-        twgl.setTextureFromArray(gl, this.emissionIcdf, this.icdf, {
+        twgl.setTextureFromArray(gl, this.emissionIcdfTex, this.icdf, {
             width: EmissionSpectrum.ICDF_SAMPLES,
             height: 1,
             format: gl.LUMINANCE,
@@ -97,7 +98,7 @@ export class EmissionSpectrum {
             minMag: gl.NEAREST,
             wrap: gl.CLAMP_TO_EDGE,
         });
-        twgl.setTextureFromArray(gl, this.emissionPdf, this.pdf, {
+        twgl.setTextureFromArray(gl, this.emissionPdfTex, this.pdf, {
             width: EmissionSpectrum.SPECTRUM_SAMPLES,
             height: 1,
             format: gl.LUMINANCE,
@@ -105,7 +106,7 @@ export class EmissionSpectrum {
             minMag: gl.NEAREST,
             wrap: gl.CLAMP_TO_EDGE,
         });
-        twgl.setTextureFromArray(gl, this.emission, this.samples, {
+        twgl.setTextureFromArray(gl, this.emissionTex, this.samples, {
             width: EmissionSpectrum.SPECTRUM_SAMPLES,
             height: 1,
             format: gl.LUMINANCE,

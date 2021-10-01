@@ -84,13 +84,13 @@ export class Tantalum {
         const config = {
             "resolutions": [[820, 461], [1024, 576], [1280, 720], [1600, 900], [1920, 1080], [4096, 2160]],
             "scenes": [
-                { 'shader': 'scene1', 'name': 'Lenses', 'posA': [0.5, 0.5], 'posB': [0.5, 0.5], 'spread': tcore.Renderer.SPREAD_POINT },
-                { 'shader': 'scene6', 'name': 'Spheres', 'posA': map(-1.59, 0.65), 'posB': map(0.65, -0.75), 'spread': tcore.Renderer.SPREAD_BEAM },
-                { 'shader': 'scene7', 'name': 'Playground', 'posA': [0.3, 0.52], 'posB': [0.3, 0.52], 'spread': tcore.Renderer.SPREAD_POINT },
-                { 'shader': 'scene4', 'name': 'Prism', 'posA': [0.1, 0.65], 'posB': [0.4, 0.4], 'spread': tcore.Renderer.SPREAD_LASER },
-                { 'shader': 'scene5', 'name': 'Cardioid', 'posA': [0.2, 0.5], 'posB': [0.2, 0.5], 'spread': tcore.Renderer.SPREAD_POINT },
-                { 'shader': 'scene3', 'name': 'Cornell Box', 'posA': [0.5, 0.101], 'posB': [0.5, 0.2], 'spread': tcore.Renderer.SPREAD_AREA },
-                { 'shader': 'scene2', 'name': 'Rough Mirror Spheres', 'posA': [0.25, 0.125], 'posB': [0.5, 0.66], 'spread': tcore.Renderer.SPREAD_LASER }
+                { 'shader': 'scene1', 'name': 'Lenses', 'posA': [0.5, 0.5], 'posB': [0.5, 0.5], 'spread': tcore.Emittor.SPREAD_POINT },
+                { 'shader': 'scene6', 'name': 'Spheres', 'posA': map(-1.59, 0.65), 'posB': map(0.65, -0.75), 'spread': tcore.Emittor.SPREAD_BEAM },
+                { 'shader': 'scene7', 'name': 'Playground', 'posA': [0.3, 0.52], 'posB': [0.3, 0.52], 'spread': tcore.Emittor.SPREAD_POINT },
+                { 'shader': 'scene4', 'name': 'Prism', 'posA': [0.1, 0.65], 'posB': [0.4, 0.4], 'spread': tcore.Emittor.SPREAD_LASER },
+                { 'shader': 'scene5', 'name': 'Cardioid', 'posA': [0.2, 0.5], 'posB': [0.2, 0.5], 'spread': tcore.Emittor.SPREAD_POINT },
+                { 'shader': 'scene3', 'name': 'Cornell Box', 'posA': [0.5, 0.101], 'posB': [0.5, 0.2], 'spread': tcore.Emittor.SPREAD_AREA },
+                { 'shader': 'scene2', 'name': 'Rough Mirror Spheres', 'posA': [0.25, 0.125], 'posB': [0.5, 0.66], 'spread': tcore.Emittor.SPREAD_LASER }
             ]
         } as {
             resolutions: [number, number][],
@@ -111,7 +111,7 @@ export class Tantalum {
             config.scenes.map(s => s.shader));
         const spectrumRenderer = new SpectrumRenderer.SpectrumRenderer(
             this.spectrumCanvas,
-            renderer.emissionSpectrum);
+            renderer.emitter.spectrum);
 
         /* Let's try and make member variables in JS a little less verbose... */
         const { content, canvas } = this;
