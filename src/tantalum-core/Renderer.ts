@@ -94,7 +94,6 @@ export class Renderer {
         this.fbo = gl.createFramebuffer()!;
 
         gl.clearColor(0.0, 0.0, 0.0, 1.0);
-        gl.blendFunc(gl.ONE, gl.ONE);
 
         this.changeResolution(width, height);
     }
@@ -246,6 +245,7 @@ export class Renderer {
         this.multiBufExt.drawBuffersWEBGL([gl.COLOR_ATTACHMENT0]);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.screenBuffer!, 0);
         gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE);
 
         twgl.drawObjectList(gl, [{
             programInfo: this.passProgram,

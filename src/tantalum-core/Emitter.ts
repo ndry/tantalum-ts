@@ -91,7 +91,7 @@ export class Emitter {
         aspect: number,
     ) {
         const gl = this.gl;
-        const raySize = currentRayState.size;
+        const raySize = nextRayState.size;
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.frameBuffer);
         gl.viewport(0, 0, raySize, raySize);
