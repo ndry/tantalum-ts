@@ -60,25 +60,6 @@ class RayState {
             src: rgbData,
         });
     }
-    getUniforms() {
-        return {
-            PosData: this.posTex,
-            RngData: this.rngTex,
-            RgbData: this.rgbTex,
-        };
-    }
-    attach(fbo: WebGLFramebuffer) {
-        const gl = this.gl;
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.posTex, 0);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 1, gl.TEXTURE_2D, this.rngTex, 0);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 2, gl.TEXTURE_2D, this.rgbTex, 0);
-    }
-    detach(fbo: WebGLFramebuffer) {
-        const gl = this.gl;
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 1, gl.TEXTURE_2D, null, 0);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 2, gl.TEXTURE_2D, null, 0);
-    }
 }
 
 export class Renderer {
@@ -94,7 +75,6 @@ export class Renderer {
     maxSampleCount = 100000;
     spreadType = Renderer.SPREAD_POINT;
     currentScene = 0;
-    needsReset = true;
 
     compositeProgram: twgl.ProgramInfo;
     passProgram: twgl.ProgramInfo;
@@ -104,10 +84,7 @@ export class Renderer {
 
     maxPathLength = 12;
 
-    spectrum: WebGLTexture;
-    emission: WebGLTexture;
-    emissionIcdf: WebGLTexture;
-    emissionPdf: WebGLTexture;
+    emissionSpectrum: EmissionSpectrum
 
     raySize = 512;
     rayCount = this.raySize * this.raySize;
@@ -126,7 +103,6 @@ export class Renderer {
     screenBuffer?: WebGLTexture;
     waveBuffer?: WebGLTexture;
 
-    emissionSpectrum = new EmissionSpectrum();
 
     constructor(
         public gl: WebGL2RenderingContext,
@@ -135,6 +111,7 @@ export class Renderer {
         public height: number,
         scenes: string[],
     ) {
+        this.emissionSpectrum = new EmissionSpectrum(gl);
         this.quadVbo = twgl.createBufferInfoFromArrays(gl, {
             Position: [
                 1.0, 1.0, 0.0,
@@ -164,39 +141,6 @@ export class Renderer {
 
         this.tracePrograms = scenes.map(s => createProgram("trace_vert", s));
 
-        this.spectrum = twgl.createTexture(gl, {
-            width: wavelengthToRgbTable.length / 4,
-            height: 1,
-            format: getFormatForChannelCount(gl, 4),
-            type: gl.FLOAT,
-            minMag: gl.LINEAR,
-            wrap: gl.CLAMP_TO_EDGE,
-            src: wavelengthToRgbTable,
-        });
-        this.emission = twgl.createTexture(gl, {
-            width: EmissionSpectrum.SPECTRUM_SAMPLES,
-            height: 1,
-            format: getFormatForChannelCount(gl, 1),
-            type: gl.FLOAT,
-            minMag: gl.NEAREST,
-            wrap: gl.CLAMP_TO_EDGE,
-        });
-        this.emissionIcdf = twgl.createTexture(gl, {
-            width: EmissionSpectrum.ICDF_SAMPLES,
-            height: 1,
-            format: getFormatForChannelCount(gl, 1),
-            type: gl.FLOAT,
-            minMag: gl.NEAREST,
-            wrap: gl.CLAMP_TO_EDGE,
-        });
-        this.emissionPdf = twgl.createTexture(gl, {
-            width: EmissionSpectrum.SPECTRUM_SAMPLES,
-            height: 1,
-            format: getFormatForChannelCount(gl, 1),
-            type: gl.FLOAT,
-            minMag: gl.NEAREST,
-            wrap: gl.CLAMP_TO_EDGE,
-        });
 
         this.resetActiveBlock();
         this.currentState = 0;
@@ -229,33 +173,6 @@ export class Renderer {
     }
     setEmissionSpectrum(values: Parameters<EmissionSpectrum["set"]>[0]) {
         this.emissionSpectrum.set(values);
-
-        const gl = this.gl;
-        twgl.setTextureFromArray(gl, this.emissionIcdf, this.emissionSpectrum.icdf, {
-            width: EmissionSpectrum.ICDF_SAMPLES,
-            height: 1,
-            format: getFormatForChannelCount(gl, 1),
-            type: gl.FLOAT,
-            minMag: gl.NEAREST,
-            wrap: gl.CLAMP_TO_EDGE,
-        });
-        twgl.setTextureFromArray(gl, this.emissionPdf, this.emissionSpectrum.pdf, {
-            width: EmissionSpectrum.SPECTRUM_SAMPLES,
-            height: 1,
-            format: getFormatForChannelCount(gl, 1),
-            type: gl.FLOAT,
-            minMag: gl.NEAREST,
-            wrap: gl.CLAMP_TO_EDGE,
-        });
-        twgl.setTextureFromArray(gl, this.emission, this.emissionSpectrum.samples, {
-            width: EmissionSpectrum.SPECTRUM_SAMPLES,
-            height: 1,
-            format: getFormatForChannelCount(gl, 1),
-            type: gl.FLOAT,
-            minMag: gl.NEAREST,
-            wrap: gl.CLAMP_TO_EDGE,
-        });
-
         this.reset();
     }
 
@@ -306,9 +223,6 @@ export class Renderer {
     pathLength = 0;
     elapsedTimes: number[] = [];
     reset() {
-        if (!this.needsReset)
-            return;
-        this.needsReset = false;
         this.wavesTraced = 0;
         this.raysTraced = 0;
         this.samplesTraced = 0;
@@ -387,7 +301,7 @@ export class Renderer {
     finished() {
         return this.totalSamplesTraced() >= this.maxSampleCount;
     }
-    composite() {
+    runComposite() {
         twgl.drawObjectList(this.gl, [{
             programInfo: this.compositeProgram,
             bufferInfo: this.quadVbo,
@@ -398,16 +312,12 @@ export class Renderer {
             type: this.gl.TRIANGLE_FAN,
         }]);
     }
-    render(timestamp: number) {
-        this.needsReset = true;
-        this.elapsedTimes.push(timestamp);
-
-        let current = this.currentState;
-        let next = 1 - current;
-
+    runInit() {
         const gl = this.gl;
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+        const current = this.currentState;
+        const next = 1 - this.currentState;
 
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
         gl.viewport(0, 0, this.raySize, this.raySize);
         gl.scissor(0, 0, this.raySize, this.activeBlock);
         gl.enable(gl.SCISSOR_TEST);
@@ -416,53 +326,52 @@ export class Renderer {
             gl.COLOR_ATTACHMENT0 + 1,
             gl.COLOR_ATTACHMENT0 + 2,
         ]);
-        this.rayStates[next].attach(this.fbo);
-
-        if (this.pathLength == 0) {
-            twgl.drawObjectList(gl, [{
-                programInfo: this.initProgram,
-                bufferInfo: this.quadVbo,
-                uniforms: {
-                    RngData: this.rayStates[current].rngTex,
-                    Spectrum: this.spectrum,
-                    Emission: this.emission,
-                    ICDF: this.emissionIcdf,
-                    PDF: this.emissionPdf,
-                    EmitterPos: [
-                        ((this.emitterPos[0] / this.width) * 2.0 - 1.0) * this.aspect,
-                        1.0 - (this.emitterPos[1] / this.height) * 2.0],
-                    EmitterDir: [
-                        Math.cos(this.angularSpread[0]),
-                        -Math.sin(this.angularSpread[0])],
-                    EmitterPower: this.emitterPower,
-                    SpatialSpread: this.spatialSpread,
-                    AngularSpread: [-this.angularSpread[0], this.angularSpread[1]],
-                },
-                type: gl.TRIANGLE_FAN,
-            }]);
-
-            current = 1 - current;
-            next = 1 - next;
-            this.rayStates[next].attach(this.fbo);
-        }
+        const rs = this.rayStates[next];
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rs.posTex, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 1, gl.TEXTURE_2D, rs.rngTex, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 2, gl.TEXTURE_2D, rs.rgbTex, 0);
 
         twgl.drawObjectList(gl, [{
-            programInfo: this.tracePrograms[this.currentScene],
+            programInfo: this.initProgram,
             bufferInfo: this.quadVbo,
-            uniforms: this.rayStates[current].getUniforms(),
-            type: this.gl.TRIANGLE_FAN,
+            uniforms: {
+                RngData: this.rayStates[current].rngTex,
+                Spectrum: this.emissionSpectrum.spectrum,
+                Emission: this.emissionSpectrum.emission,
+                ICDF: this.emissionSpectrum.emissionIcdf,
+                PDF: this.emissionSpectrum.emissionPdf,
+                EmitterPos: [
+                    ((this.emitterPos[0] / this.width) * 2.0 - 1.0) * this.aspect,
+                    1.0 - (this.emitterPos[1] / this.height) * 2.0],
+                EmitterDir: [
+                    Math.cos(this.angularSpread[0]),
+                    -Math.sin(this.angularSpread[0])],
+                EmitterPower: this.emitterPower,
+                SpatialSpread: this.spatialSpread,
+                AngularSpread: [-this.angularSpread[0], this.angularSpread[1]],
+            },
+            type: gl.TRIANGLE_FAN,
         }]);
 
-        this.rayStates[next].detach(this.fbo);
-
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 1, gl.TEXTURE_2D, null, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 2, gl.TEXTURE_2D, null, 0);
         gl.disable(gl.SCISSOR_TEST);
-        gl.viewport(0, 0, this.width, this.height);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    runRay() {
+        const gl = this.gl;
+        const current = this.currentState;
+        const next = 1 - this.currentState;
 
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+        gl.viewport(0, 0, this.width, this.height);
         this.multiBufExt.drawBuffersWEBGL([gl.COLOR_ATTACHMENT0]);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.waveBuffer!, 0);
 
-        if (this.pathLength == 0 || this.wavesTraced == 0)
+        if (this.pathLength == 0 || this.wavesTraced == 0) {
             gl.clear(gl.COLOR_BUFFER_BIT);
+        }
 
         gl.enable(gl.BLEND);
 
@@ -479,20 +388,81 @@ export class Renderer {
             count: this.raySize * this.activeBlock * 2,
         }]);
 
+        gl.disable(gl.BLEND);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    runPass() {
+        const gl = this.gl;
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+        gl.viewport(0, 0, this.width, this.height);
+        this.multiBufExt.drawBuffersWEBGL([gl.COLOR_ATTACHMENT0]);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.screenBuffer!, 0);
+        gl.enable(gl.BLEND);
+
+        twgl.drawObjectList(gl, [{
+            programInfo: this.passProgram,
+            bufferInfo: this.quadVbo,
+            uniforms: {
+                Frame: this.waveBuffer!,
+            },
+            type: gl.TRIANGLE_FAN,
+        }]);
+
+        gl.disable(gl.BLEND);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    runTrace() {
+        const gl = this.gl;
+
+        const currectRayState = this.rayStates[this.currentState];
+        const nextRayState = this.rayStates[1 - this.currentState];
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+        gl.viewport(0, 0, this.raySize, this.raySize);
+        gl.scissor(0, 0, this.raySize, this.activeBlock);
+        gl.enable(gl.SCISSOR_TEST);
+        this.multiBufExt.drawBuffersWEBGL([
+            gl.COLOR_ATTACHMENT0,
+            gl.COLOR_ATTACHMENT0 + 1,
+            gl.COLOR_ATTACHMENT0 + 2,
+        ]);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, nextRayState.posTex, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 1, gl.TEXTURE_2D, nextRayState.rngTex, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 2, gl.TEXTURE_2D, nextRayState.rgbTex, 0);
+
+        twgl.drawObjectList(gl, [{
+            programInfo: this.tracePrograms[this.currentScene],
+            bufferInfo: this.quadVbo,
+            uniforms: {
+                PosData: currectRayState.posTex,
+                RngData: currectRayState.rngTex,
+                RgbData: currectRayState.rgbTex,
+            },
+            type: this.gl.TRIANGLE_FAN,
+        }]);
+
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 1, gl.TEXTURE_2D, null, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + 2, gl.TEXTURE_2D, null, 0);
+        gl.disable(gl.SCISSOR_TEST);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    render(timestamp: number) {
+        this.elapsedTimes.push(timestamp);
+
+        if (this.pathLength == 0) {
+            this.runInit();
+            this.currentState = 1 - this.currentState;
+        }
+        this.runTrace();
+        this.runRay();
+
         this.raysTraced += this.raySize * this.activeBlock;
         this.pathLength += 1;
 
         if (this.pathLength == this.maxPathLength || this.wavesTraced == 0) {
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.screenBuffer!, 0);
-
-            twgl.drawObjectList(gl, [{
-                programInfo: this.passProgram,
-                bufferInfo: this.quadVbo,
-                uniforms: {
-                    Frame: this.waveBuffer!,
-                },
-                type: gl.TRIANGLE_FAN,
-            }]);
+            this.runPass();
 
             if (this.pathLength == this.maxPathLength) {
                 this.samplesTraced += this.raySize * this.activeBlock;
@@ -500,32 +470,27 @@ export class Renderer {
                 this.pathLength = 0;
 
                 if (this.elapsedTimes.length > 5) {
-                    let avgTime = 0;
-                    for (let i = 1; i < this.elapsedTimes.length; ++i)
-                        avgTime += this.elapsedTimes[i] - this.elapsedTimes[i - 1];
-                    avgTime /= this.elapsedTimes.length - 1;
+                    const ts = this.elapsedTimes;
+                    const avgFrameTime = (ts[ts.length - 1] - ts[0]) / (ts.length - 1);
 
                     /* Let's try to stay at reasonable frame times. Targeting 16ms is
                        a bit tricky because there's a lot of variability in how often
                        the browser executes this loop and 16ms might well not be
                        reachable, but 24ms seems to do ok */
-                    if (avgTime > 24.0)
-                        this.activeBlock = Math.max(4, this.activeBlock - 4);
+                    const targetFrameTime = 24.0;
+                    this.activeBlock = Math.max(4, Math.min(512, Math.round(
+                        this.activeBlock * (targetFrameTime / avgFrameTime)
+                    )));
 
-                    else
-                        this.activeBlock = Math.min(512, this.activeBlock + 4);
-
-                    this.elapsedTimes = [this.elapsedTimes[this.elapsedTimes.length - 1]];
+                    this.elapsedTimes = [ts[ts.length - 1]];
                 }
             }
         }
 
-        gl.disable(gl.BLEND);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        this.composite();
+        this.runComposite();
 
-        this.currentState = next;
+        this.currentState = 1 - this.currentState;
     }
 }
 

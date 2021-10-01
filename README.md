@@ -2,7 +2,7 @@
 
 # Fork note
 
-This fork is a typescript translation of the original javascript implementation, which I made to closely inspect the code structure. Its crossbrowser support may have shrunk in old browsers.
+This fork is a typescript translation/adaptation of the original javascript implementation. I worked on this adaptation to closely inspect how The Tantalum Renderer works, so it does not exactly repeats the original source code, but it fully replicates the original functionallity. The crossbrowser support may have shrunk in old browsers.
 
 The original README content follows below, except the Compilation section, which was updated.
 
@@ -18,7 +18,7 @@ Tantalum is written in JavaScript and WebGL.
 
 To give developers as much freedom as is reasonable, Tantalum is distributed under the [libpng/zlib](http://opensource.org/licenses/Zlib) license. This allows you to modify, redistribute and sell all or parts of the code without attribution.
 
-Note that Tantalum includes several third-party libraries in the `src/thirdparty` folder that come with their own licenses. Please see the `LICENSE.txt` file for more information.
+Note that Tantalum includes several third-party libraries in the `./thirdparty` folder that come with their own licenses. Please see the `LICENSE.txt` file for more information.
 
 ## Compilation ##
 

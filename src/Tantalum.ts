@@ -238,7 +238,7 @@ export class Tantalum {
                There's most likely some browser/ANGLE meddling happening here, but
                in interest of my mental health I'm not going to dig deeper into this */
             if (this.renderer.finished())
-                this.renderer.composite();
+                this.renderer.runComposite();
 
             let fileName = "Tantalum";
             if (this.savedImages > 0)

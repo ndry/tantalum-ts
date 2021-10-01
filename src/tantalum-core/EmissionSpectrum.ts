@@ -1,5 +1,6 @@
 import { gasDischargeLines } from "./gasDischargeLines";
 import { wavelengthToRgbTable } from "./wavelengthToRgbTable";
+import * as twgl from "twgl.js";
 
 export class EmissionSpectrum {
     static LAMBDA_MIN = 360.0;
@@ -21,8 +22,47 @@ export class EmissionSpectrum {
     pdf = new Float32Array(EmissionSpectrum.SPECTRUM_SAMPLES);
     icdf = new Float32Array(EmissionSpectrum.ICDF_SAMPLES);
 
+    spectrum: WebGLTexture;
+    emission: WebGLTexture;
+    emissionIcdf: WebGLTexture;
+    emissionPdf: WebGLTexture;
+
     constructor(
+        public gl: WebGL2RenderingContext,
     ) {
+        this.spectrum = twgl.createTexture(gl, {
+            width: wavelengthToRgbTable.length / 4,
+            height: 1,
+            format: gl.RGBA, // 4-channel
+            type: gl.FLOAT,
+            minMag: gl.LINEAR,
+            wrap: gl.CLAMP_TO_EDGE,
+            src: wavelengthToRgbTable,
+        });
+        this.emission = twgl.createTexture(gl, {
+            width: EmissionSpectrum.SPECTRUM_SAMPLES,
+            height: 1,
+            format: gl.LUMINANCE, // 1-channel
+            type: gl.FLOAT,
+            minMag: gl.NEAREST,
+            wrap: gl.CLAMP_TO_EDGE,
+        });
+        this.emissionIcdf = twgl.createTexture(gl, {
+            width: EmissionSpectrum.ICDF_SAMPLES,
+            height: 1,
+            format: gl.LUMINANCE, // 1-channel
+            type: gl.FLOAT,
+            minMag: gl.NEAREST,
+            wrap: gl.CLAMP_TO_EDGE,
+        });
+        this.emissionPdf = twgl.createTexture(gl, {
+            width: EmissionSpectrum.SPECTRUM_SAMPLES,
+            height: 1,
+            format: gl.LUMINANCE, // 1-channel
+            type: gl.FLOAT,
+            minMag: gl.NEAREST,
+            wrap: gl.CLAMP_TO_EDGE,
+        });
     }
 
     set(values: {
@@ -47,6 +87,32 @@ export class EmissionSpectrum {
         }
 
         this.computeIcdf();
+
+        const gl = this.gl;
+        twgl.setTextureFromArray(gl, this.emissionIcdf, this.icdf, {
+            width: EmissionSpectrum.ICDF_SAMPLES,
+            height: 1,
+            format: gl.LUMINANCE,
+            type: gl.FLOAT,
+            minMag: gl.NEAREST,
+            wrap: gl.CLAMP_TO_EDGE,
+        });
+        twgl.setTextureFromArray(gl, this.emissionPdf, this.pdf, {
+            width: EmissionSpectrum.SPECTRUM_SAMPLES,
+            height: 1,
+            format: gl.LUMINANCE,
+            type: gl.FLOAT,
+            minMag: gl.NEAREST,
+            wrap: gl.CLAMP_TO_EDGE,
+        });
+        twgl.setTextureFromArray(gl, this.emission, this.samples, {
+            width: EmissionSpectrum.SPECTRUM_SAMPLES,
+            height: 1,
+            format: gl.LUMINANCE,
+            type: gl.FLOAT,
+            minMag: gl.NEAREST,
+            wrap: gl.CLAMP_TO_EDGE,
+        });
     }
 
     computeWhite() {
